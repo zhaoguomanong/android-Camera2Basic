@@ -62,6 +62,7 @@ import android.widget.Toast;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.lang.reflect.Constructor;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -127,6 +128,41 @@ public class Camera2BasicFragment extends Fragment
      * Max preview height that is guaranteed by Camera2 API
      */
     private static final int MAX_PREVIEW_HEIGHT = 1080;
+
+    private static final boolean ENABLE_ZSD = true;
+
+    //MTK ZSL Capture
+    public static final CaptureRequest.Key<byte[]> ZSL_CAPTURE_MODE = createCustomizeKey("com.mediatek.control.capture.zsl.mode", byte[].class);
+
+
+    public static final CaptureRequest.Key createCustomizeKey(String key, Class<?> type) {
+        Class c = CaptureRequest.Key.class;
+        Class[] params = new Class[2];
+        params[0] = String.class;
+        params[1] = Class.class;
+
+        Constructor constructor = null;
+        try {
+            constructor = c.getConstructor(params);
+
+            Object[] paramObjs = new Object[2];
+            paramObjs[0] = key;
+            paramObjs[1] = type;
+
+            try {
+                CaptureRequest.Key customizekey = (CaptureRequest.Key) constructor.newInstance(paramObjs);
+                if (customizekey != null) {
+                    Log.d(TAG, "CaptureRequest.Key : " + customizekey.getName() + ", string : " + customizekey.toString());
+                }
+                return customizekey;
+            } catch (Exception e) {
+                Log.w(TAG, "get custom key fail : " + e);
+            }
+        } catch (NoSuchMethodException e) {
+            Log.w(TAG, "getConstructor fail : " + e);
+        }
+        return null;
+    }
 
     /**
      * {@link TextureView.SurfaceTextureListener} handles several lifecycle events on a
@@ -707,6 +743,7 @@ public class Camera2BasicFragment extends Fragment
                                         CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE);
                                 // Flash is automatically enabled when necessary.
                                 setAutoFlash(mPreviewRequestBuilder);
+                                zsdOn(mPreviewRequestBuilder, false);
 
                                 // Finally, we start displaying the camera preview.
                                 mPreviewRequest = mPreviewRequestBuilder.build();
@@ -804,6 +841,8 @@ public class Camera2BasicFragment extends Fragment
         }
     }
 
+    private static long captureSessionTimestamp = -1;
+
     /**
      * Capture a still picture. This method should be called when we get a response in
      * {@link #mCaptureCallback} from both {@link #lockFocus()}.
@@ -828,6 +867,8 @@ public class Camera2BasicFragment extends Fragment
             int rotation = activity.getWindowManager().getDefaultDisplay().getRotation();
             captureBuilder.set(CaptureRequest.JPEG_ORIENTATION, getOrientation(rotation));
 
+            zsdOn(captureBuilder, true);
+
             CameraCaptureSession.CaptureCallback CaptureCallback
                     = new CameraCaptureSession.CaptureCallback() {
 
@@ -835,9 +876,17 @@ public class Camera2BasicFragment extends Fragment
                 public void onCaptureCompleted(@NonNull CameraCaptureSession session,
                                                @NonNull CaptureRequest request,
                                                @NonNull TotalCaptureResult result) {
-                    showToast("Saved: " + mFile);
+//                    showToast("Saved: " + mFile);
                     Log.d(TAG, mFile.toString());
                     unlockFocus();
+                }
+
+                @Override
+                public void onCaptureStarted(@NonNull CameraCaptureSession session, @NonNull CaptureRequest request, long timestamp, long frameNumber) {
+                    super.onCaptureStarted(session, request, timestamp, frameNumber);
+                    captureSessionTimestamp = timestamp;
+
+                    Log.d(TAG, "onCaptureStarted: timestamp = " + timestamp);
                 }
             };
 
@@ -905,10 +954,20 @@ public class Camera2BasicFragment extends Fragment
     }
 
     private void setAutoFlash(CaptureRequest.Builder requestBuilder) {
-        if (mFlashSupported) {
-            requestBuilder.set(CaptureRequest.CONTROL_AE_MODE,
-                    CaptureRequest.CONTROL_AE_MODE_ON_AUTO_FLASH);
+//        if (mFlashSupported) {
+//            requestBuilder.set(CaptureRequest.CONTROL_AE_MODE,
+//                    CaptureRequest.CONTROL_AE_MODE_ON_AUTO_FLASH);
+//        }
+    }
+
+    private void zsdOn(CaptureRequest.Builder requestBuilder, boolean isStillCaptureTemplate) {
+        if (!ENABLE_ZSD) {
+            return;
         }
+        if (isStillCaptureTemplate) {
+            requestBuilder.set(CaptureRequest.CONTROL_ENABLE_ZSL, true);
+        }
+        requestBuilder.set(ZSL_CAPTURE_MODE, new byte[]{1});
     }
 
     /**
@@ -926,6 +985,11 @@ public class Camera2BasicFragment extends Fragment
         private final File mFile;
 
         ImageSaver(Image image, File file) {
+            long imageTimeStamp = image.getTimestamp();
+            Log.d(TAG, "onImageAvailable: imageTimeStamp = " + imageTimeStamp);
+            if (imageTimeStamp != captureSessionTimestamp) {
+                Log.e(TAG, "Fatal error: 时间戳不相等");
+            }
             mImage = image;
             mFile = file;
         }
