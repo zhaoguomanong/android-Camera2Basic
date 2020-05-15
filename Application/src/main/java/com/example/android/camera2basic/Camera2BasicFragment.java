@@ -24,6 +24,8 @@ import android.content.Context;
 import android.content.DialogInterface;
 import android.content.pm.PackageManager;
 import android.content.res.Configuration;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.ImageFormat;
 import android.graphics.Matrix;
 import android.graphics.Point;
@@ -57,6 +59,7 @@ import android.view.Surface;
 import android.view.TextureView;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.ImageView;
 import android.widget.Toast;
 
 import java.io.File;
@@ -204,6 +207,7 @@ public class Camera2BasicFragment extends Fragment
      * An {@link AutoFitTextureView} for camera preview.
      */
     private AutoFitTextureView mTextureView;
+    private ImageView mImageView;
 
     /**
      * A {@link CameraCaptureSession } for camera preview.
@@ -468,6 +472,7 @@ public class Camera2BasicFragment extends Fragment
         view.findViewById(R.id.picture).setOnClickListener(this);
         view.findViewById(R.id.info).setOnClickListener(this);
         mTextureView = (AutoFitTextureView) view.findViewById(R.id.texture);
+        mImageView = view.findViewById(R.id.thumbnail);
     }
 
     @Override
@@ -1012,6 +1017,16 @@ public class Camera2BasicFragment extends Fragment
             ByteBuffer buffer = mImage.getPlanes()[0].getBuffer();
             byte[] bytes = new byte[buffer.remaining()];
             buffer.get(bytes);
+            final Bitmap bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.length);
+            final Bitmap rotated  = rotateBitmap(bitmap, 90);
+            getActivity().runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    if (null != rotated) {
+                        mImageView.setImageBitmap(rotated);
+                    }
+                }
+            });
             FileOutputStream output = null;
             try {
                 output = new FileOutputStream(mFile);
@@ -1134,6 +1149,19 @@ public class Camera2BasicFragment extends Fragment
             Log.e(TAG, "Exception while getting system property: ", e);
             return defaultValue;
         }
+    }
+
+    public static Bitmap rotateBitmap(Bitmap bitmap, int degress) {
+        if (bitmap != null){
+            Matrix m = new Matrix();
+            m.postRotate(degress);
+            bitmap = Bitmap.createBitmap(bitmap, 0, 0, bitmap.getWidth(), bitmap.getHeight(), m,
+
+               true);
+            return bitmap;
+        }
+        return null;
+
     }
 
 }
