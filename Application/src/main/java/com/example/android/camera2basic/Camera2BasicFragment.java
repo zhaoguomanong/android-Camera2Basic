@@ -63,6 +63,7 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.lang.reflect.Constructor;
+import java.lang.reflect.Method;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -132,9 +133,6 @@ public class Camera2BasicFragment extends Fragment
     private static final int MAX_PREVIEW_HEIGHT = 1080;
 
     private static final boolean ENABLE_ZSD = true;
-
-    //MTK ZSL Capture
-//    public static final CaptureRequest.Key<byte[]> ZSL_CAPTURE_MODE = createCustomizeKey("com.mediatek.control.capture.zsl.mode", byte[].class);
 
     private Object mLock = new Object();
     BlockingQueue<Long> timeStampQueue = new LinkedBlockingQueue<>(10);
@@ -974,7 +972,11 @@ public class Camera2BasicFragment extends Fragment
         if (isStillCaptureTemplate) {
             requestBuilder.set(CaptureRequest.CONTROL_ENABLE_ZSL, true);
         }
-//        requestBuilder.set(ZSL_CAPTURE_MODE, new byte[]{1});
+
+        if (isMtkPlatform()) {
+            CaptureRequest.Key ZSL_CAPTURE_MODE = createCustomizeKey("com.mediatek.control.capture.zsl.mode", byte[].class);
+            requestBuilder.set(ZSL_CAPTURE_MODE, new byte[]{1});
+        }
     }
 
     /**
@@ -994,11 +996,6 @@ public class Camera2BasicFragment extends Fragment
         ImageSaver(Image image, File file) {
             long imageTimeStamp = image.getTimestamp();
             Log.d(TAG, "onImageAvailable: imageTimeStamp = " + imageTimeStamp);
-//            if (captureSessionTimestamp > 0
-//                    && imageTimeStamp != captureSessionTimestamp) {
-//                Log.e(TAG, "Fatal error: 时间戳不相等");
-//            }
-//            captureSessionTimestamp = -1;
             synchronized (mLock) {
                 Long requestTimeStamp = timeStampQueue.poll();
                 if (null != requestTimeStamp
@@ -1110,6 +1107,32 @@ public class Camera2BasicFragment extends Fragment
                                 }
                             })
                     .create();
+        }
+    }
+
+    public static boolean isMtkPlatform() {
+        String platform = getProp("ro.board.platform", "unknown");
+        if (null == platform) {
+            return false;
+        }
+        platform = platform.toUpperCase();
+        Log.v(TAG, "PLATFORM = " + platform);
+        if (platform.startsWith("MT")) {
+            return true;
+        }
+        return false;
+
+    }
+
+    public static String getProp(String key, String defaultValue) {
+        try {
+            final Class<?> systemProperties = Class.forName("android.os.SystemProperties");
+            final Method get = systemProperties.getMethod("get", String.class, String.class);
+            return (String) get.invoke(null, key, defaultValue);
+        } catch (Exception e) {
+            // This should never happen
+            Log.e(TAG, "Exception while getting system property: ", e);
+            return defaultValue;
         }
     }
 
