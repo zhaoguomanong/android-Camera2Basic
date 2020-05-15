@@ -69,6 +69,8 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 
@@ -132,7 +134,10 @@ public class Camera2BasicFragment extends Fragment
     private static final boolean ENABLE_ZSD = true;
 
     //MTK ZSL Capture
-    public static final CaptureRequest.Key<byte[]> ZSL_CAPTURE_MODE = createCustomizeKey("com.mediatek.control.capture.zsl.mode", byte[].class);
+//    public static final CaptureRequest.Key<byte[]> ZSL_CAPTURE_MODE = createCustomizeKey("com.mediatek.control.capture.zsl.mode", byte[].class);
+
+    private Object mLock = new Object();
+    BlockingQueue<Long> timeStampQueue = new LinkedBlockingQueue<>(10);
 
 
     public static final CaptureRequest.Key createCustomizeKey(String key, Class<?> type) {
@@ -841,7 +846,6 @@ public class Camera2BasicFragment extends Fragment
         }
     }
 
-    private static long captureSessionTimestamp = -1;
 
     /**
      * Capture a still picture. This method should be called when we get a response in
@@ -884,8 +888,11 @@ public class Camera2BasicFragment extends Fragment
                 @Override
                 public void onCaptureStarted(@NonNull CameraCaptureSession session, @NonNull CaptureRequest request, long timestamp, long frameNumber) {
                     super.onCaptureStarted(session, request, timestamp, frameNumber);
-                    captureSessionTimestamp = timestamp;
-
+                    synchronized (mLock) {
+                        if (!timeStampQueue.offer(timestamp)) {
+                            Log.e(TAG, "onCaptureStarted: add timeStampQueue failed");
+                        }
+                    }
                     Log.d(TAG, "onCaptureStarted: timestamp = " + timestamp);
                 }
             };
@@ -967,13 +974,13 @@ public class Camera2BasicFragment extends Fragment
         if (isStillCaptureTemplate) {
             requestBuilder.set(CaptureRequest.CONTROL_ENABLE_ZSL, true);
         }
-        requestBuilder.set(ZSL_CAPTURE_MODE, new byte[]{1});
+//        requestBuilder.set(ZSL_CAPTURE_MODE, new byte[]{1});
     }
 
     /**
      * Saves a JPEG {@link Image} into the specified {@link File}.
      */
-    private static class ImageSaver implements Runnable {
+    private class ImageSaver implements Runnable {
 
         /**
          * The JPEG image
@@ -987,8 +994,17 @@ public class Camera2BasicFragment extends Fragment
         ImageSaver(Image image, File file) {
             long imageTimeStamp = image.getTimestamp();
             Log.d(TAG, "onImageAvailable: imageTimeStamp = " + imageTimeStamp);
-            if (imageTimeStamp != captureSessionTimestamp) {
-                Log.e(TAG, "Fatal error: 时间戳不相等");
+//            if (captureSessionTimestamp > 0
+//                    && imageTimeStamp != captureSessionTimestamp) {
+//                Log.e(TAG, "Fatal error: 时间戳不相等");
+//            }
+//            captureSessionTimestamp = -1;
+            synchronized (mLock) {
+                Long requestTimeStamp = timeStampQueue.poll();
+                if (null != requestTimeStamp
+                        && requestTimeStamp != imageTimeStamp) {
+                    Log.e(TAG, "Fatal error: 时间戳不相等");
+                }
             }
             mImage = image;
             mFile = file;
